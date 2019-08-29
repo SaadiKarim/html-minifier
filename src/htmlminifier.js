@@ -5,7 +5,7 @@ var decode = require('he').decode;
 var HTMLParser = require('./htmlparser').HTMLParser;
 var RelateUrl = require('relateurl');
 var TokenChain = require('./tokenchain');
-var UglifyJS = require('uglify-js');
+var terser = require('terser');
 var utils = require('./utils');
 
 function trimWhitespace(str) {
@@ -14,22 +14,30 @@ function trimWhitespace(str) {
 
 function collapseWhitespaceAll(str) {
   // Non-breaking space is specifically handled inside the replacer function here:
-  return str && str.replace(/[ \n\r\t\f\xA0]+/g, function(spaces) {
-    return spaces === '\t' ? '\t' : spaces.replace(/(^|\xA0+)[^\xA0]+/g, '$1 ');
-  });
+  return (
+    str &&
+    str.replace(/[ \n\r\t\f\xA0]+/g, function(spaces) {
+      return spaces === '\t'
+        ? '\t'
+        : spaces.replace(/(^|\xA0+)[^\xA0]+/g, '$1 ');
+    })
+  );
 }
 
 function collapseWhitespace(str, options, trimLeft, trimRight, collapseAll) {
-  var lineBreakBefore = '', lineBreakAfter = '';
+  var lineBreakBefore = '',
+    lineBreakAfter = '';
 
   if (options.preserveLineBreaks) {
-    str = str.replace(/^[ \n\r\t\f]*?[\n\r][ \n\r\t\f]*/, function() {
-      lineBreakBefore = '\n';
-      return '';
-    }).replace(/[ \n\r\t\f]*?[\n\r][ \n\r\t\f]*$/, function() {
-      lineBreakAfter = '\n';
-      return '';
-    });
+    str = str
+      .replace(/^[ \n\r\t\f]*?[\n\r][ \n\r\t\f]*/, function() {
+        lineBreakBefore = '\n';
+        return '';
+      })
+      .replace(/[ \n\r\t\f]*?[\n\r][ \n\r\t\f]*$/, function() {
+        lineBreakAfter = '\n';
+        return '';
+      });
   }
 
   if (trimLeft) {
@@ -39,7 +47,10 @@ function collapseWhitespace(str, options, trimLeft, trimRight, collapseAll) {
       if (conservative && spaces === '\t') {
         return '\t';
       }
-      return spaces.replace(/^[^\xA0]+/, '').replace(/(\xA0+)[^\xA0]+/g, '$1 ') || (conservative ? ' ' : '');
+      return (
+        spaces.replace(/^[^\xA0]+/, '').replace(/(\xA0+)[^\xA0]+/g, '$1 ') ||
+        (conservative ? ' ' : '')
+      );
     });
   }
 
@@ -50,7 +61,10 @@ function collapseWhitespace(str, options, trimLeft, trimRight, collapseAll) {
       if (conservative && spaces === '\t') {
         return '\t';
       }
-      return spaces.replace(/[^\xA0]+(\xA0+)/g, ' $1').replace(/[^\xA0]+$/, '') || (conservative ? ' ' : '');
+      return (
+        spaces.replace(/[^\xA0]+(\xA0+)/g, ' $1').replace(/[^\xA0]+$/, '') ||
+        (conservative ? ' ' : '')
+      );
     });
   }
 
@@ -64,22 +78,38 @@ function collapseWhitespace(str, options, trimLeft, trimRight, collapseAll) {
 
 var createMapFromString = utils.createMapFromString;
 // non-empty tags that will maintain whitespace around them
-var inlineTags = createMapFromString('a,abbr,acronym,b,bdi,bdo,big,button,cite,code,del,dfn,em,font,i,ins,kbd,label,mark,math,nobr,object,q,rp,rt,rtc,ruby,s,samp,select,small,span,strike,strong,sub,sup,svg,textarea,time,tt,u,var');
+var inlineTags = createMapFromString(
+  'a,abbr,acronym,b,bdi,bdo,big,button,cite,code,del,dfn,em,font,i,ins,kbd,label,mark,math,nobr,object,q,rp,rt,rtc,ruby,s,samp,select,small,span,strike,strong,sub,sup,svg,textarea,time,tt,u,var'
+);
 // non-empty tags that will maintain whitespace within them
-var inlineTextTags = createMapFromString('a,abbr,acronym,b,big,del,em,font,i,ins,kbd,mark,nobr,rp,s,samp,small,span,strike,strong,sub,sup,time,tt,u,var');
+var inlineTextTags = createMapFromString(
+  'a,abbr,acronym,b,big,del,em,font,i,ins,kbd,mark,nobr,rp,s,samp,small,span,strike,strong,sub,sup,time,tt,u,var'
+);
 // self-closing tags that will maintain whitespace around them
 var selfClosingInlineTags = createMapFromString('comment,img,input,wbr');
 
 function collapseWhitespaceSmart(str, prevTag, nextTag, options) {
   var trimLeft = prevTag && !selfClosingInlineTags(prevTag);
   if (trimLeft && !options.collapseInlineTagWhitespace) {
-    trimLeft = prevTag.charAt(0) === '/' ? !inlineTags(prevTag.slice(1)) : !inlineTextTags(prevTag);
+    trimLeft =
+      prevTag.charAt(0) === '/'
+        ? !inlineTags(prevTag.slice(1))
+        : !inlineTextTags(prevTag);
   }
   var trimRight = nextTag && !selfClosingInlineTags(nextTag);
   if (trimRight && !options.collapseInlineTagWhitespace) {
-    trimRight = nextTag.charAt(0) === '/' ? !inlineTextTags(nextTag.slice(1)) : !inlineTags(nextTag);
+    trimRight =
+      nextTag.charAt(0) === '/'
+        ? !inlineTextTags(nextTag.slice(1))
+        : !inlineTags(nextTag);
   }
-  return collapseWhitespace(str, options, trimLeft, trimRight, prevTag && nextTag);
+  return collapseWhitespace(
+    str,
+    options,
+    trimLeft,
+    trimRight,
+    prevTag && nextTag
+  );
 }
 
 function isConditionalComment(text) {
@@ -98,7 +128,7 @@ function isIgnoredComment(text, options) {
 function isEventAttribute(attrName, options) {
   var patterns = options.customEventAttributes;
   if (patterns) {
-    for (var i = patterns.length; i--;) {
+    for (var i = patterns.length; i--; ) {
       if (patterns[i].test(attrName)) {
         return true;
       }
@@ -114,7 +144,7 @@ function canRemoveAttributeQuotes(value) {
 }
 
 function attributesInclude(attributes, attribute) {
-  for (var i = attributes.length; i--;) {
+  for (var i = attributes.length; i--; ) {
     if (attributes[i].name.toLowerCase() === attribute) {
       return true;
     }
@@ -126,29 +156,16 @@ function isAttributeRedundant(tag, attrName, attrValue, attrs) {
   attrValue = attrValue ? trimWhitespace(attrValue.toLowerCase()) : '';
 
   return (
-    tag === 'script' &&
-    attrName === 'language' &&
-    attrValue === 'javascript' ||
-
-    tag === 'form' &&
-    attrName === 'method' &&
-    attrValue === 'get' ||
-
-    tag === 'input' &&
-    attrName === 'type' &&
-    attrValue === 'text' ||
-
-    tag === 'script' &&
-    attrName === 'charset' &&
-    !attributesInclude(attrs, 'src') ||
-
-    tag === 'a' &&
-    attrName === 'name' &&
-    attributesInclude(attrs, 'id') ||
-
-    tag === 'area' &&
-    attrName === 'shape' &&
-    attrValue === 'rect'
+    (tag === 'script' &&
+      attrName === 'language' &&
+      attrValue === 'javascript') ||
+    (tag === 'form' && attrName === 'method' && attrValue === 'get') ||
+    (tag === 'input' && attrName === 'type' && attrValue === 'text') ||
+    (tag === 'script' &&
+      attrName === 'charset' &&
+      !attributesInclude(attrs, 'src')) ||
+    (tag === 'a' && attrName === 'name' && attributesInclude(attrs, 'id')) ||
+    (tag === 'area' && attrName === 'shape' && attrValue === 'rect')
   );
 }
 
@@ -199,37 +216,44 @@ function isStyleSheet(tag, attrs) {
   return true;
 }
 
-var isSimpleBoolean = createMapFromString('allowfullscreen,async,autofocus,autoplay,checked,compact,controls,declare,default,defaultchecked,defaultmuted,defaultselected,defer,disabled,enabled,formnovalidate,hidden,indeterminate,inert,ismap,itemscope,loop,multiple,muted,nohref,noresize,noshade,novalidate,nowrap,open,pauseonexit,readonly,required,reversed,scoped,seamless,selected,sortable,truespeed,typemustmatch,visible');
+var isSimpleBoolean = createMapFromString(
+  'allowfullscreen,async,autofocus,autoplay,checked,compact,controls,declare,default,defaultchecked,defaultmuted,defaultselected,defer,disabled,enabled,formnovalidate,hidden,indeterminate,inert,ismap,itemscope,loop,multiple,muted,nohref,noresize,noshade,novalidate,nowrap,open,pauseonexit,readonly,required,reversed,scoped,seamless,selected,sortable,truespeed,typemustmatch,visible'
+);
 var isBooleanValue = createMapFromString('true,false');
 
 function isBooleanAttribute(attrName, attrValue) {
-  return isSimpleBoolean(attrName) || attrName === 'draggable' && !isBooleanValue(attrValue);
+  return (
+    isSimpleBoolean(attrName) ||
+    (attrName === 'draggable' && !isBooleanValue(attrValue))
+  );
 }
 
 function isUriTypeAttribute(attrName, tag) {
   return (
-    /^(?:a|area|link|base)$/.test(tag) && attrName === 'href' ||
-    tag === 'img' && /^(?:src|longdesc|usemap)$/.test(attrName) ||
-    tag === 'object' && /^(?:classid|codebase|data|usemap)$/.test(attrName) ||
-    tag === 'q' && attrName === 'cite' ||
-    tag === 'blockquote' && attrName === 'cite' ||
-    (tag === 'ins' || tag === 'del') && attrName === 'cite' ||
-    tag === 'form' && attrName === 'action' ||
-    tag === 'input' && (attrName === 'src' || attrName === 'usemap') ||
-    tag === 'head' && attrName === 'profile' ||
-    tag === 'script' && (attrName === 'src' || attrName === 'for')
+    (/^(?:a|area|link|base)$/.test(tag) && attrName === 'href') ||
+    (tag === 'img' && /^(?:src|longdesc|usemap)$/.test(attrName)) ||
+    (tag === 'object' && /^(?:classid|codebase|data|usemap)$/.test(attrName)) ||
+    (tag === 'q' && attrName === 'cite') ||
+    (tag === 'blockquote' && attrName === 'cite') ||
+    ((tag === 'ins' || tag === 'del') && attrName === 'cite') ||
+    (tag === 'form' && attrName === 'action') ||
+    (tag === 'input' && (attrName === 'src' || attrName === 'usemap')) ||
+    (tag === 'head' && attrName === 'profile') ||
+    (tag === 'script' && (attrName === 'src' || attrName === 'for'))
   );
 }
 
 function isNumberTypeAttribute(attrName, tag) {
   return (
-    /^(?:a|area|object|button)$/.test(tag) && attrName === 'tabindex' ||
-    tag === 'input' && (attrName === 'maxlength' || attrName === 'tabindex') ||
-    tag === 'select' && (attrName === 'size' || attrName === 'tabindex') ||
-    tag === 'textarea' && /^(?:rows|cols|tabindex)$/.test(attrName) ||
-    tag === 'colgroup' && attrName === 'span' ||
-    tag === 'col' && attrName === 'span' ||
-    (tag === 'th' || tag === 'td') && (attrName === 'rowspan' || attrName === 'colspan')
+    (/^(?:a|area|object|button)$/.test(tag) && attrName === 'tabindex') ||
+    (tag === 'input' &&
+      (attrName === 'maxlength' || attrName === 'tabindex')) ||
+    (tag === 'select' && (attrName === 'size' || attrName === 'tabindex')) ||
+    (tag === 'textarea' && /^(?:rows|cols|tabindex)$/.test(attrName)) ||
+    (tag === 'colgroup' && attrName === 'span') ||
+    (tag === 'col' && attrName === 'span') ||
+    ((tag === 'th' || tag === 'td') &&
+      (attrName === 'rowspan' || attrName === 'colspan'))
   );
 }
 
@@ -245,7 +269,10 @@ function isLinkType(tag, attrs, value) {
 }
 
 function isMediaQuery(tag, attrs, attrName) {
-  return attrName === 'media' && (isLinkType(tag, attrs, 'stylesheet') || isStyleSheet(tag, attrs));
+  return (
+    attrName === 'media' &&
+    (isLinkType(tag, attrs, 'stylesheet') || isStyleSheet(tag, attrs))
+  );
 }
 
 var srcsetTags = createMapFromString('img,source');
@@ -258,25 +285,22 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
   if (isEventAttribute(attrName, options)) {
     attrValue = trimWhitespace(attrValue).replace(/^javascript:\s*/i, '');
     return options.minifyJS(attrValue, true);
-  }
-  else if (attrName === 'class') {
+  } else if (attrName === 'class') {
     attrValue = trimWhitespace(attrValue);
     if (options.sortClassName) {
       attrValue = options.sortClassName(attrValue);
-    }
-    else {
+    } else {
       attrValue = collapseWhitespaceAll(attrValue);
     }
     return attrValue;
-  }
-  else if (isUriTypeAttribute(attrName, tag)) {
+  } else if (isUriTypeAttribute(attrName, tag)) {
     attrValue = trimWhitespace(attrValue);
-    return isLinkType(tag, attrs, 'canonical') ? attrValue : options.minifyURLs(attrValue);
-  }
-  else if (isNumberTypeAttribute(attrName, tag)) {
+    return isLinkType(tag, attrs, 'canonical')
+      ? attrValue
+      : options.minifyURLs(attrValue);
+  } else if (isNumberTypeAttribute(attrName, tag)) {
     return trimWhitespace(attrValue);
-  }
-  else if (attrName === 'style') {
+  } else if (attrName === 'style') {
     attrValue = trimWhitespace(attrValue);
     if (attrValue) {
       if (/;$/.test(attrValue) && !/&#?[0-9a-zA-Z]+;$/.test(attrValue)) {
@@ -285,42 +309,47 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
       attrValue = options.minifyCSS(attrValue, 'inline');
     }
     return attrValue;
-  }
-  else if (isSrcset(attrName, tag)) {
+  } else if (isSrcset(attrName, tag)) {
     // https://html.spec.whatwg.org/multipage/embedded-content.html#attr-img-srcset
-    attrValue = trimWhitespace(attrValue).split(/\s+,\s*|\s*,\s+/).map(function(candidate) {
-      var url = candidate;
-      var descriptor = '';
-      var match = candidate.match(/\s+([1-9][0-9]*w|[0-9]+(?:\.[0-9]+)?x)$/);
-      if (match) {
-        url = url.slice(0, -match[0].length);
-        var num = +match[1].slice(0, -1);
-        var suffix = match[1].slice(-1);
-        if (num !== 1 || suffix !== 'x') {
-          descriptor = ' ' + num + suffix;
+    attrValue = trimWhitespace(attrValue)
+      .split(/\s+,\s*|\s*,\s+/)
+      .map(function(candidate) {
+        var url = candidate;
+        var descriptor = '';
+        var match = candidate.match(/\s+([1-9][0-9]*w|[0-9]+(?:\.[0-9]+)?x)$/);
+        if (match) {
+          url = url.slice(0, -match[0].length);
+          var num = +match[1].slice(0, -1);
+          var suffix = match[1].slice(-1);
+          if (num !== 1 || suffix !== 'x') {
+            descriptor = ' ' + num + suffix;
+          }
         }
-      }
-      return options.minifyURLs(url) + descriptor;
-    }).join(', ');
-  }
-  else if (isMetaViewport(tag, attrs) && attrName === 'content') {
-    attrValue = attrValue.replace(/\s+/g, '').replace(/[0-9]+\.[0-9]+/g, function(numString) {
-      // "0.90000" -> "0.9"
-      // "1.0" -> "1"
-      // "1.0001" -> "1.0001" (unchanged)
-      return (+numString).toString();
-    });
-  }
-  else if (isContentSecurityPolicy(tag, attrs) && attrName.toLowerCase() === 'content') {
+        return options.minifyURLs(url) + descriptor;
+      })
+      .join(', ');
+  } else if (isMetaViewport(tag, attrs) && attrName === 'content') {
+    attrValue = attrValue
+      .replace(/\s+/g, '')
+      .replace(/[0-9]+\.[0-9]+/g, function(numString) {
+        // "0.90000" -> "0.9"
+        // "1.0" -> "1"
+        // "1.0001" -> "1.0001" (unchanged)
+        return (+numString).toString();
+      });
+  } else if (
+    isContentSecurityPolicy(tag, attrs) &&
+    attrName.toLowerCase() === 'content'
+  ) {
     return collapseWhitespaceAll(attrValue);
-  }
-  else if (options.customAttrCollapse && options.customAttrCollapse.test(attrName)) {
+  } else if (
+    options.customAttrCollapse &&
+    options.customAttrCollapse.test(attrName)
+  ) {
     attrValue = attrValue.replace(/\n+|\r+|\s{2,}/g, '');
-  }
-  else if (tag === 'script' && attrName === 'type') {
+  } else if (tag === 'script' && attrName === 'type') {
     attrValue = trimWhitespace(attrValue.replace(/\s*;\s*/g, ';'));
-  }
-  else if (isMediaQuery(tag, attrs, attrName)) {
+  } else if (isMediaQuery(tag, attrs, attrName)) {
     attrValue = trimWhitespace(attrValue);
     return options.minifyCSS(attrValue, 'media');
   }
@@ -343,7 +372,10 @@ function isContentSecurityPolicy(tag, attrs) {
     return false;
   }
   for (var i = 0, len = attrs.length; i < len; i++) {
-    if (attrs[i].name.toLowerCase() === 'http-equiv' && attrs[i].value.toLowerCase() === 'content-security-policy') {
+    if (
+      attrs[i].name.toLowerCase() === 'http-equiv' &&
+      attrs[i].value.toLowerCase() === 'content-security-policy'
+    ) {
       return true;
     }
   }
@@ -380,15 +412,24 @@ function unwrapCSS(text, type) {
 }
 
 function cleanConditionalComment(comment, options) {
-  return options.processConditionalComments ? comment.replace(/^(\[if\s[^\]]+]>)([\s\S]*?)(<!\[endif])$/, function(match, prefix, text, suffix) {
-    return prefix + minify(text, options, true) + suffix;
-  }) : comment;
+  return options.processConditionalComments
+    ? comment.replace(/^(\[if\s[^\]]+]>)([\s\S]*?)(<!\[endif])$/, function(
+        match,
+        prefix,
+        text,
+        suffix
+      ) {
+        return prefix + minify(text, options, true) + suffix;
+      })
+    : comment;
 }
 
 function processScript(text, options, currentAttrs) {
   for (var i = 0, len = currentAttrs.length; i < len; i++) {
-    if (currentAttrs[i].name.toLowerCase() === 'type' &&
-        options.processScripts.indexOf(currentAttrs[i].value) > -1) {
+    if (
+      currentAttrs[i].name.toLowerCase() === 'type' &&
+      options.processScripts.indexOf(currentAttrs[i].value) > -1
+    ) {
       return minify(text, options);
     }
   }
@@ -401,10 +442,16 @@ function processScript(text, options, currentAttrs) {
 // - </rb>, </rt>, </rtc>, </rp> & </tfoot> follow https://www.w3.org/TR/html5/syntax.html#optional-tags
 // - retain all tags which are adjacent to non-standard HTML tags
 var optionalStartTags = createMapFromString('html,head,body,colgroup,tbody');
-var optionalEndTags = createMapFromString('html,head,body,li,dt,dd,p,rb,rt,rtc,rp,optgroup,option,colgroup,caption,thead,tbody,tfoot,tr,td,th');
-var headerTags = createMapFromString('meta,link,script,style,template,noscript');
+var optionalEndTags = createMapFromString(
+  'html,head,body,li,dt,dd,p,rb,rt,rtc,rp,optgroup,option,colgroup,caption,thead,tbody,tfoot,tr,td,th'
+);
+var headerTags = createMapFromString(
+  'meta,link,script,style,template,noscript'
+);
 var descriptionTags = createMapFromString('dt,dd');
-var pBlockTags = createMapFromString('address,article,aside,blockquote,details,div,dl,fieldset,figcaption,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hgroup,hr,main,menu,nav,ol,p,pre,section,table,ul');
+var pBlockTags = createMapFromString(
+  'address,article,aside,blockquote,details,div,dl,fieldset,figcaption,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hgroup,hr,main,menu,nav,ol,p,pre,section,table,ul'
+);
 var pInlineTags = createMapFromString('a,audio,del,ins,map,noscript,video');
 var rubyTags = createMapFromString('rb,rt,rtc,rp');
 var rtcTag = createMapFromString('rb,rtc,rp');
@@ -416,7 +463,9 @@ var topLevelTags = createMapFromString('html,head,body');
 var compactTags = createMapFromString('html,body');
 var looseTags = createMapFromString('head,colgroup,caption');
 var trailingTags = createMapFromString('dt,thead');
-var htmlTags = createMapFromString('a,abbr,acronym,address,applet,area,article,aside,audio,b,base,basefont,bdi,bdo,bgsound,big,blink,blockquote,body,br,button,canvas,caption,center,cite,code,col,colgroup,command,content,data,datalist,dd,del,details,dfn,dialog,dir,div,dl,dt,element,em,embed,fieldset,figcaption,figure,font,footer,form,frame,frameset,h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,i,iframe,image,img,input,ins,isindex,kbd,keygen,label,legend,li,link,listing,main,map,mark,marquee,menu,menuitem,meta,meter,multicol,nav,nobr,noembed,noframes,noscript,object,ol,optgroup,option,output,p,param,picture,plaintext,pre,progress,q,rb,rp,rt,rtc,ruby,s,samp,script,section,select,shadow,small,source,spacer,span,strike,strong,style,sub,summary,sup,table,tbody,td,template,textarea,tfoot,th,thead,time,title,tr,track,tt,u,ul,var,video,wbr,xmp');
+var htmlTags = createMapFromString(
+  'a,abbr,acronym,address,applet,area,article,aside,audio,b,base,basefont,bdi,bdo,bgsound,big,blink,blockquote,body,br,button,canvas,caption,center,cite,code,col,colgroup,command,content,data,datalist,dd,del,details,dfn,dialog,dir,div,dl,dt,element,em,embed,fieldset,figcaption,figure,font,footer,form,frame,frameset,h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,i,iframe,image,img,input,ins,isindex,kbd,keygen,label,legend,li,link,listing,main,map,mark,marquee,menu,menuitem,meta,meter,multicol,nav,nobr,noembed,noframes,noscript,object,ol,optgroup,option,output,p,param,picture,plaintext,pre,progress,q,rb,rp,rt,rtc,ruby,s,samp,script,section,select,shadow,small,source,spacer,span,strike,strong,style,sub,summary,sup,table,tbody,td,template,textarea,tfoot,th,thead,time,title,tr,track,tt,u,ul,var,video,wbr,xmp'
+);
 
 function canRemoveParentTag(optionalStartTag, tag) {
   switch (optionalStartTag) {
@@ -482,7 +531,8 @@ function canRemovePrecedingTag(optionalEndTag, tag) {
 
 var reEmptyAttribute = new RegExp(
   '^(?:class|id|style|title|lang|dir|on(?:focus|blur|change|click|dblclick|mouse(' +
-    '?:down|up|over|move|out)|key(?:press|down|up)))$');
+    '?:down|up|over|move|out)|key(?:press|down|up)))$'
+);
 
 function canDeleteEmptyAttribute(tag, attrName, attrValue, options) {
   var isValueEmpty = !attrValue || /^\s*$/.test(attrValue);
@@ -492,7 +542,9 @@ function canDeleteEmptyAttribute(tag, attrName, attrValue, options) {
   if (typeof options.removeEmptyAttributes === 'function') {
     return options.removeEmptyAttributes(attrName, tag);
   }
-  return tag === 'input' && attrName === 'value' || reEmptyAttribute.test(attrName);
+  return (
+    (tag === 'input' && attrName === 'value') || reEmptyAttribute.test(attrName)
+  );
 }
 
 function hasAttrName(name, attrs) {
@@ -544,18 +596,24 @@ function canTrimWhitespace(tag) {
 
 function normalizeAttr(attr, attrs, tag, options) {
   var attrName = options.name(attr.name),
-      attrValue = attr.value;
+    attrValue = attr.value;
 
   if (options.decodeEntities && attrValue) {
     attrValue = decode(attrValue, { isAttributeValue: true });
   }
 
-  if (options.removeRedundantAttributes &&
-    isAttributeRedundant(tag, attrName, attrValue, attrs) ||
-    options.removeScriptTypeAttributes && tag === 'script' &&
-    attrName === 'type' && isScriptTypeAttribute(attrValue) ||
-    options.removeStyleLinkTypeAttributes && (tag === 'style' || tag === 'link') &&
-    attrName === 'type' && isStyleLinkTypeAttribute(attrValue)) {
+  if (
+    (options.removeRedundantAttributes &&
+      isAttributeRedundant(tag, attrName, attrValue, attrs)) ||
+    (options.removeScriptTypeAttributes &&
+      tag === 'script' &&
+      attrName === 'type' &&
+      isScriptTypeAttribute(attrValue)) ||
+    (options.removeStyleLinkTypeAttributes &&
+      (tag === 'style' || tag === 'link') &&
+      attrName === 'type' &&
+      isStyleLinkTypeAttribute(attrValue))
+  ) {
     return;
   }
 
@@ -563,8 +621,10 @@ function normalizeAttr(attr, attrs, tag, options) {
     attrValue = cleanAttributeValue(tag, attrName, attrValue, options, attrs);
   }
 
-  if (options.removeEmptyAttributes &&
-      canDeleteEmptyAttribute(tag, attrName, attrValue, options)) {
+  if (
+    options.removeEmptyAttributes &&
+    canDeleteEmptyAttribute(tag, attrName, attrValue, options)
+  ) {
     return;
   }
 
@@ -581,27 +641,29 @@ function normalizeAttr(attr, attrs, tag, options) {
 
 function buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr) {
   var attrName = normalized.name,
-      attrValue = normalized.value,
-      attr = normalized.attr,
-      attrQuote = attr.quote,
-      attrFragment,
-      emittedAttrValue;
+    attrValue = normalized.value,
+    attr = normalized.attr,
+    attrQuote = attr.quote,
+    attrFragment,
+    emittedAttrValue;
 
-  if (typeof attrValue !== 'undefined' && (!options.removeAttributeQuotes ||
-      ~attrValue.indexOf(uidAttr) || !canRemoveAttributeQuotes(attrValue))) {
+  if (
+    typeof attrValue !== 'undefined' &&
+    (!options.removeAttributeQuotes ||
+      ~attrValue.indexOf(uidAttr) ||
+      !canRemoveAttributeQuotes(attrValue))
+  ) {
     if (!options.preventAttributesEscaping) {
       if (typeof options.quoteCharacter === 'undefined') {
         var apos = (attrValue.match(/'/g) || []).length;
         var quot = (attrValue.match(/"/g) || []).length;
-        attrQuote = apos < quot ? '\'' : '"';
-      }
-      else {
-        attrQuote = options.quoteCharacter === '\'' ? '\'' : '"';
+        attrQuote = apos < quot ? "'" : '"';
+      } else {
+        attrQuote = options.quoteCharacter === "'" ? "'" : '"';
       }
       if (attrQuote === '"') {
         attrValue = attrValue.replace(/"/g, '&#34;');
-      }
-      else {
+      } else {
         attrValue = attrValue.replace(/'/g, '&#39;');
       }
     }
@@ -613,19 +675,20 @@ function buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr) {
   // make sure trailing slash is not interpreted as HTML self-closing tag
   else if (isLast && !hasUnarySlash && !/\/$/.test(attrValue)) {
     emittedAttrValue = attrValue;
-  }
-  else {
+  } else {
     emittedAttrValue = attrValue + ' ';
   }
 
-  if (typeof attrValue === 'undefined' || options.collapseBooleanAttributes &&
-      isBooleanAttribute(attrName.toLowerCase(), attrValue.toLowerCase())) {
+  if (
+    typeof attrValue === 'undefined' ||
+    (options.collapseBooleanAttributes &&
+      isBooleanAttribute(attrName.toLowerCase(), attrValue.toLowerCase()))
+  ) {
     attrFragment = attrName;
     if (!isLast) {
       attrFragment += ' ';
     }
-  }
-  else {
+  } else {
     attrFragment = attrName + attr.customAssign + emittedAttrValue;
   }
 
@@ -645,10 +708,7 @@ function processOptions(values) {
     canTrimWhitespace: canTrimWhitespace,
     html5: true,
     ignoreCustomComments: [/^!/],
-    ignoreCustomFragments: [
-      /<%[\s\S]*?%>/,
-      /<\?[\s\S]*?\?>/
-    ],
+    ignoreCustomFragments: [/<%[\s\S]*?%>/, /<\?[\s\S]*?\?>/],
     includeAutoGeneratedTags: true,
     log: identity,
     minifyCSS: identity,
@@ -661,13 +721,11 @@ function processOptions(values) {
       if (value) {
         options.name = identity;
       }
-    }
-    else if (key === 'log') {
+    } else if (key === 'log') {
       if (typeof value === 'function') {
         options.log = value;
       }
-    }
-    else if (key === 'minifyCSS' && typeof value !== 'function') {
+    } else if (key === 'minifyCSS' && typeof value !== 'function') {
       if (!value) {
         return;
       }
@@ -675,7 +733,13 @@ function processOptions(values) {
         value = {};
       }
       options.minifyCSS = function(text, type) {
-        text = text.replace(/(url\s*\(\s*)("|'|)(.*?)\2(\s*\))/ig, function(match, prefix, quote, url, suffix) {
+        text = text.replace(/(url\s*\(\s*)("|'|)(.*?)\2(\s*\))/gi, function(
+          match,
+          prefix,
+          quote,
+          url,
+          suffix
+        ) {
           return prefix + quote + options.minifyURLs(url) + quote + suffix;
         });
         var cleanCssOutput = new CleanCSS(value).minify(wrapCSS(text, type));
@@ -685,8 +749,7 @@ function processOptions(values) {
         }
         return unwrapCSS(cleanCssOutput.styles, type);
       };
-    }
-    else if (key === 'minifyJS' && typeof value !== 'function') {
+    } else if (key === 'minifyJS' && typeof value !== 'function') {
       if (!value) {
         return;
       }
@@ -696,37 +759,35 @@ function processOptions(values) {
       (value.parse || (value.parse = {})).bare_returns = false;
       options.minifyJS = function(text, inline) {
         var start = text.match(/^\s*<!--.*/);
-        var code = start ? text.slice(start[0].length).replace(/\n\s*-->\s*$/, '') : text;
+        var code = start
+          ? text.slice(start[0].length).replace(/\n\s*-->\s*$/, '')
+          : text;
         value.parse.bare_returns = inline;
-        var result = UglifyJS.minify(code, value);
+        var result = terser.minify(code, value);
         if (result.error) {
           options.log(result.error);
           return text;
         }
         return result.code.replace(/;$/, '');
       };
-    }
-    else if (key === 'minifyURLs' && typeof value !== 'function') {
+    } else if (key === 'minifyURLs' && typeof value !== 'function') {
       if (!value) {
         return;
       }
       if (typeof value === 'string') {
         value = { site: value };
-      }
-      else if (typeof value !== 'object') {
+      } else if (typeof value !== 'object') {
         value = {};
       }
       options.minifyURLs = function(text) {
         try {
           return RelateUrl.relate(text, value);
-        }
-        catch (err) {
+        } catch (err) {
           options.log(err);
           return text;
         }
       };
-    }
-    else {
+    } else {
       options[key] = value;
     }
   });
@@ -736,7 +797,9 @@ function processOptions(values) {
 function uniqueId(value) {
   var id;
   do {
-    id = Math.random().toString(36).replace(/^0\.[0-9]*/, '');
+    id = Math.random()
+      .toString(36)
+      .replace(/^0\.[0-9]*/, '');
   } while (~value.indexOf(id));
   return id;
 }
@@ -774,9 +837,15 @@ function createSortFns(value, options, uidIgnore, uidAttr) {
         for (var i = 0, len = attrs.length; i < len; i++) {
           var attr = attrs[i];
           if (classChain && attr.value && options.name(attr.name) === 'class') {
-            classChain.add(trimWhitespace(attr.value).split(/[ \t\n\f\r]+/).filter(shouldSkipUIDs));
-          }
-          else if (options.processScripts && attr.name.toLowerCase() === 'type') {
+            classChain.add(
+              trimWhitespace(attr.value)
+                .split(/[ \t\n\f\r]+/)
+                .filter(shouldSkipUIDs)
+            );
+          } else if (
+            options.processScripts &&
+            attr.name.toLowerCase() === 'type'
+          ) {
             currentTag = tag;
             currentType = attr.value;
           }
@@ -786,8 +855,11 @@ function createSortFns(value, options, uidIgnore, uidAttr) {
         currentTag = '';
       },
       chars: function(text) {
-        if (options.processScripts && specialContentTags(currentTag) &&
-            options.processScripts.indexOf(currentType) > -1) {
+        if (
+          options.processScripts &&
+          specialContentTags(currentTag) &&
+          options.processScripts.indexOf(currentType) > -1
+        ) {
           scan(text);
         }
       }
@@ -833,52 +905,60 @@ function minify(value, options, partialMarkup) {
   }
 
   var buffer = [],
-      charsPrevTag,
-      currentChars = '',
-      hasChars,
-      currentTag = '',
-      currentAttrs = [],
-      stackNoTrimWhitespace = [],
-      stackNoCollapseWhitespace = [],
-      optionalStartTag = '',
-      optionalEndTag = '',
-      ignoredMarkupChunks = [],
-      ignoredCustomMarkupChunks = [],
-      uidIgnore,
-      uidAttr,
-      uidPattern;
+    charsPrevTag,
+    currentChars = '',
+    hasChars,
+    currentTag = '',
+    currentAttrs = [],
+    stackNoTrimWhitespace = [],
+    stackNoCollapseWhitespace = [],
+    optionalStartTag = '',
+    optionalEndTag = '',
+    ignoredMarkupChunks = [],
+    ignoredCustomMarkupChunks = [],
+    uidIgnore,
+    uidAttr,
+    uidPattern;
 
   // temporarily replace ignored chunks with comments,
   // so that we don't have to worry what's there.
   // for all we care there might be
   // completely-horribly-broken-alien-non-html-emoj-cthulhu-filled content
-  value = value.replace(/<!-- htmlmin:ignore -->([\s\S]*?)<!-- htmlmin:ignore -->/g, function(match, group1) {
-    if (!uidIgnore) {
-      uidIgnore = uniqueId(value);
-      var pattern = new RegExp('^' + uidIgnore + '([0-9]+)$');
-      if (options.ignoreCustomComments) {
-        options.ignoreCustomComments = options.ignoreCustomComments.slice();
+  value = value.replace(
+    /<!-- htmlmin:ignore -->([\s\S]*?)<!-- htmlmin:ignore -->/g,
+    function(match, group1) {
+      if (!uidIgnore) {
+        uidIgnore = uniqueId(value);
+        var pattern = new RegExp('^' + uidIgnore + '([0-9]+)$');
+        if (options.ignoreCustomComments) {
+          options.ignoreCustomComments = options.ignoreCustomComments.slice();
+        } else {
+          options.ignoreCustomComments = [];
+        }
+        options.ignoreCustomComments.push(pattern);
       }
-      else {
-        options.ignoreCustomComments = [];
-      }
-      options.ignoreCustomComments.push(pattern);
+      var token = '<!--' + uidIgnore + ignoredMarkupChunks.length + '-->';
+      ignoredMarkupChunks.push(group1);
+      return token;
     }
-    var token = '<!--' + uidIgnore + ignoredMarkupChunks.length + '-->';
-    ignoredMarkupChunks.push(group1);
-    return token;
-  });
+  );
 
   var customFragments = options.ignoreCustomFragments.map(function(re) {
     return re.source;
   });
   if (customFragments.length) {
-    var reCustomIgnore = new RegExp('\\s*(?:' + customFragments.join('|') + ')+\\s*', 'g');
+    var reCustomIgnore = new RegExp(
+      '\\s*(?:' + customFragments.join('|') + ')+\\s*',
+      'g'
+    );
     // temporarily replace custom ignored fragments with unique attributes
     value = value.replace(reCustomIgnore, function(match) {
       if (!uidAttr) {
         uidAttr = uniqueId(value);
-        uidPattern = new RegExp('(\\s*)' + uidAttr + '([0-9]+)' + uidAttr + '(\\s*)', 'g');
+        uidPattern = new RegExp(
+          '(\\s*)' + uidAttr + '([0-9]+)' + uidAttr + '(\\s*)',
+          'g'
+        );
         if (options.minifyCSS) {
           options.minifyCSS = (function(fn) {
             return function(text, type) {
@@ -887,14 +967,16 @@ function minify(value, options, partialMarkup) {
                 return chunks[1] + uidAttr + index + uidAttr + chunks[2];
               });
               var ids = [];
-              new CleanCSS().minify(wrapCSS(text, type)).warnings.forEach(function(warning) {
-                var match = uidPattern.exec(warning);
-                if (match) {
-                  var id = uidAttr + match[2] + uidAttr;
-                  text = text.replace(id, ignoreCSS(id));
-                  ids.push(id);
-                }
-              });
+              new CleanCSS()
+                .minify(wrapCSS(text, type))
+                .warnings.forEach(function(warning) {
+                  var match = uidPattern.exec(warning);
+                  if (match) {
+                    var id = uidAttr + match[2] + uidAttr;
+                    text = text.replace(id, ignoreCSS(id));
+                    ids.push(id);
+                  }
+                });
               text = fn(text, type);
               ids.forEach(function(id) {
                 text = text.replace(ignoreCSS(id), id);
@@ -906,10 +988,13 @@ function minify(value, options, partialMarkup) {
         if (options.minifyJS) {
           options.minifyJS = (function(fn) {
             return function(text, type) {
-              return fn(text.replace(uidPattern, function(match, prefix, index) {
-                var chunks = ignoredCustomMarkupChunks[+index];
-                return chunks[1] + uidAttr + index + uidAttr + chunks[2];
-              }), type);
+              return fn(
+                text.replace(uidPattern, function(match, prefix, index) {
+                  var chunks = ignoredCustomMarkupChunks[+index];
+                  return chunks[1] + uidAttr + index + uidAttr + chunks[2];
+                }),
+                type
+              );
             };
           })(options.minifyJS);
         }
@@ -920,8 +1005,10 @@ function minify(value, options, partialMarkup) {
     });
   }
 
-  if (options.sortAttributes && typeof options.sortAttributes !== 'function' ||
-      options.sortClassName && typeof options.sortClassName !== 'function') {
+  if (
+    (options.sortAttributes && typeof options.sortAttributes !== 'function') ||
+    (options.sortClassName && typeof options.sortClassName !== 'function')
+  ) {
     createSortFns(value, options, uidIgnore, uidAttr);
   }
 
@@ -956,8 +1043,10 @@ function minify(value, options, partialMarkup) {
       var match = str.match(/^<\/([\w:-]+)>$/);
       if (match) {
         endTag = match[1];
-      }
-      else if (/>$/.test(str) || (buffer[index] = collapseWhitespaceSmart(str, null, nextTag, options))) {
+      } else if (
+        />$/.test(str) ||
+        (buffer[index] = collapseWhitespaceSmart(str, null, nextTag, options))
+      ) {
         break;
       }
     }
@@ -1031,7 +1120,10 @@ function minify(value, options, partialMarkup) {
           if (!_canTrimWhitespace(tag, attrs) || stackNoTrimWhitespace.length) {
             stackNoTrimWhitespace.push(tag);
           }
-          if (!_canCollapseWhitespace(tag, attrs) || stackNoCollapseWhitespace.length) {
+          if (
+            !_canCollapseWhitespace(tag, attrs) ||
+            stackNoCollapseWhitespace.length
+          ) {
             stackNoCollapseWhitespace.push(tag);
           }
         }
@@ -1047,10 +1139,12 @@ function minify(value, options, partialMarkup) {
       }
 
       var parts = [];
-      for (var i = attrs.length, isLast = true; --i >= 0;) {
+      for (var i = attrs.length, isLast = true; --i >= 0; ) {
         var normalized = normalizeAttr(attrs[i], attrs, tag, options);
         if (normalized) {
-          parts.unshift(buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr));
+          parts.unshift(
+            buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr)
+          );
           isLast = false;
         }
       }
@@ -1082,12 +1176,14 @@ function minify(value, options, partialMarkup) {
           if (tag === stackNoTrimWhitespace[stackNoTrimWhitespace.length - 1]) {
             stackNoTrimWhitespace.pop();
           }
-        }
-        else {
+        } else {
           squashTrailingWhitespace('/' + tag);
         }
-        if (stackNoCollapseWhitespace.length &&
-          tag === stackNoCollapseWhitespace[stackNoCollapseWhitespace.length - 1]) {
+        if (
+          stackNoCollapseWhitespace.length &&
+          tag ===
+            stackNoCollapseWhitespace[stackNoCollapseWhitespace.length - 1]
+        ) {
           stackNoCollapseWhitespace.pop();
         }
       }
@@ -1108,30 +1204,36 @@ function minify(value, options, partialMarkup) {
         // </head> may be omitted if not followed by space or comment
         // </p> may be omitted if no more content in non-</a> parent
         // except for </dt> or </thead>, end tags may be omitted if no more content in parent element
-        if (htmlTags(tag) && optionalEndTag && !trailingTags(optionalEndTag) && (optionalEndTag !== 'p' || !pInlineTags(tag))) {
+        if (
+          htmlTags(tag) &&
+          optionalEndTag &&
+          !trailingTags(optionalEndTag) &&
+          (optionalEndTag !== 'p' || !pInlineTags(tag))
+        ) {
           removeEndTag();
         }
         optionalEndTag = optionalEndTags(tag) ? tag : '';
       }
 
-      if (options.removeEmptyElements && isElementEmpty && canRemoveElement(tag, attrs)) {
+      if (
+        options.removeEmptyElements &&
+        isElementEmpty &&
+        canRemoveElement(tag, attrs)
+      ) {
         // remove last "element" from buffer
         removeStartTag();
         optionalStartTag = '';
         optionalEndTag = '';
-      }
-      else {
+      } else {
         if (autoGenerated && !options.includeAutoGeneratedTags) {
           optionalEndTag = '';
-        }
-        else {
+        } else {
           buffer.push('</' + tag + '>');
         }
         charsPrevTag = '/' + tag;
         if (!inlineTags(tag)) {
           currentChars = '';
-        }
-        else if (isElementEmpty) {
+        } else if (isElementEmpty) {
           currentChars += '|';
         }
       }
@@ -1150,12 +1252,19 @@ function minify(value, options, partialMarkup) {
               if (!prevComment) {
                 prevTag = charsPrevTag;
               }
-              if (buffer.length > 1 && (!prevComment || !options.conservativeCollapse && / $/.test(currentChars))) {
+              if (
+                buffer.length > 1 &&
+                (!prevComment ||
+                  (!options.conservativeCollapse && / $/.test(currentChars)))
+              ) {
                 var charsIndex = buffer.length - 2;
-                buffer[charsIndex] = buffer[charsIndex].replace(/\s+$/, function(trailingSpaces) {
-                  text = trailingSpaces + text;
-                  return '';
-                });
+                buffer[charsIndex] = buffer[charsIndex].replace(
+                  /\s+$/,
+                  function(trailingSpaces) {
+                    text = trailingSpaces + text;
+                    return '';
+                  }
+                );
               }
             }
           }
@@ -1163,27 +1272,45 @@ function minify(value, options, partialMarkup) {
             if (prevTag === '/nobr' || prevTag === 'wbr') {
               if (/^\s/.test(text)) {
                 var tagIndex = buffer.length - 1;
-                while (tagIndex > 0 && buffer[tagIndex].lastIndexOf('<' + prevTag) !== 0) {
+                while (
+                  tagIndex > 0 &&
+                  buffer[tagIndex].lastIndexOf('<' + prevTag) !== 0
+                ) {
                   tagIndex--;
                 }
                 trimTrailingWhitespace(tagIndex - 1, 'br');
               }
-            }
-            else if (inlineTextTags(prevTag.charAt(0) === '/' ? prevTag.slice(1) : prevTag)) {
-              text = collapseWhitespace(text, options, /(?:^|\s)$/.test(currentChars));
+            } else if (
+              inlineTextTags(
+                prevTag.charAt(0) === '/' ? prevTag.slice(1) : prevTag
+              )
+            ) {
+              text = collapseWhitespace(
+                text,
+                options,
+                /(?:^|\s)$/.test(currentChars)
+              );
             }
           }
           if (prevTag || nextTag) {
             text = collapseWhitespaceSmart(text, prevTag, nextTag, options);
-          }
-          else {
+          } else {
             text = collapseWhitespace(text, options, true, true);
           }
-          if (!text && /\s$/.test(currentChars) && prevTag && prevTag.charAt(0) === '/') {
+          if (
+            !text &&
+            /\s$/.test(currentChars) &&
+            prevTag &&
+            prevTag.charAt(0) === '/'
+          ) {
             trimTrailingWhitespace(buffer.length - 1, nextTag);
           }
         }
-        if (!stackNoCollapseWhitespace.length && nextTag !== 'html' && !(prevTag && nextTag)) {
+        if (
+          !stackNoCollapseWhitespace.length &&
+          nextTag !== 'html' &&
+          !(prevTag && nextTag)
+        ) {
           text = collapseWhitespace(text, options, false, false, true);
         }
       }
@@ -1199,13 +1326,19 @@ function minify(value, options, partialMarkup) {
       if (options.removeOptionalTags && text) {
         // <html> may be omitted if first thing inside is not comment
         // <body> may be omitted if first thing inside is not space, comment, <meta>, <link>, <script>, <style> or <template>
-        if (optionalStartTag === 'html' || optionalStartTag === 'body' && !/^\s/.test(text)) {
+        if (
+          optionalStartTag === 'html' ||
+          (optionalStartTag === 'body' && !/^\s/.test(text))
+        ) {
           removeStartTag();
         }
         optionalStartTag = '';
         // </html> or </body> may be omitted if not followed by comment
         // </head>, </colgroup> or </caption> may be omitted if not followed by space or comment
-        if (compactTags(optionalEndTag) || looseTags(optionalEndTag) && !/^\s/.test(text)) {
+        if (
+          compactTags(optionalEndTag) ||
+          (looseTags(optionalEndTag) && !/^\s/.test(text))
+        ) {
           removeEndTag();
         }
         optionalEndTag = '';
@@ -1217,9 +1350,18 @@ function minify(value, options, partialMarkup) {
         // 2) or any other character reference (i.e. one that does end with `;`)
         // Note that `&` can be escaped as `&amp`, without the semi-colon.
         // https://mathiasbynens.be/notes/ambiguous-ampersands
-        text = text.replace(/&((?:Iacute|aacute|uacute|plusmn|Otilde|otilde|agrave|Agrave|Yacute|yacute|Oslash|oslash|atilde|Atilde|brvbar|ccedil|Ccedil|Ograve|curren|divide|eacute|Eacute|ograve|Oacute|egrave|Egrave|Ugrave|frac12|frac14|frac34|ugrave|oacute|iacute|Ntilde|ntilde|Uacute|middot|igrave|Igrave|iquest|Aacute|cedil|laquo|micro|iexcl|Icirc|icirc|acirc|Ucirc|Ecirc|ocirc|Ocirc|ecirc|ucirc|Aring|aring|AElig|aelig|acute|pound|raquo|Acirc|times|THORN|szlig|thorn|COPY|auml|ordf|ordm|Uuml|macr|uuml|Auml|ouml|Ouml|para|nbsp|euml|quot|QUOT|Euml|yuml|cent|sect|copy|sup1|sup2|sup3|iuml|Iuml|ETH|shy|reg|not|yen|amp|AMP|REG|uml|eth|deg|gt|GT|LT|lt)(?!;)|(?:#?[0-9a-zA-Z]+;))/g, '&amp$1').replace(/</g, '&lt;');
+        text = text
+          .replace(
+            /&((?:Iacute|aacute|uacute|plusmn|Otilde|otilde|agrave|Agrave|Yacute|yacute|Oslash|oslash|atilde|Atilde|brvbar|ccedil|Ccedil|Ograve|curren|divide|eacute|Eacute|ograve|Oacute|egrave|Egrave|Ugrave|frac12|frac14|frac34|ugrave|oacute|iacute|Ntilde|ntilde|Uacute|middot|igrave|Igrave|iquest|Aacute|cedil|laquo|micro|iexcl|Icirc|icirc|acirc|Ucirc|Ecirc|ocirc|Ocirc|ecirc|ucirc|Aring|aring|AElig|aelig|acute|pound|raquo|Acirc|times|THORN|szlig|thorn|COPY|auml|ordf|ordm|Uuml|macr|uuml|Auml|ouml|Ouml|para|nbsp|euml|quot|QUOT|Euml|yuml|cent|sect|copy|sup1|sup2|sup3|iuml|Iuml|ETH|shy|reg|not|yen|amp|AMP|REG|uml|eth|deg|gt|GT|LT|lt)(?!;)|(?:#?[0-9a-zA-Z]+;))/g,
+            '&amp$1'
+          )
+          .replace(/</g, '&lt;');
       }
-      if (uidPattern && options.collapseWhitespace && stackNoTrimWhitespace.length) {
+      if (
+        uidPattern &&
+        options.collapseWhitespace &&
+        stackNoTrimWhitespace.length
+      ) {
         text = text.replace(uidPattern, function(match, prefix, index) {
           return ignoredCustomMarkupChunks[+index][0];
         });
@@ -1235,16 +1377,13 @@ function minify(value, options, partialMarkup) {
       var suffix = nonStandard ? '>' : '-->';
       if (isConditionalComment(text)) {
         text = prefix + cleanConditionalComment(text, options) + suffix;
-      }
-      else if (options.removeComments) {
+      } else if (options.removeComments) {
         if (isIgnoredComment(text, options)) {
           text = '<!--' + text + '-->';
-        }
-        else {
+        } else {
           text = '';
         }
-      }
-      else {
+      } else {
         text = prefix + text + suffix;
       }
       if (options.removeOptionalTags && text) {
@@ -1255,9 +1394,11 @@ function minify(value, options, partialMarkup) {
       buffer.push(text);
     },
     doctype: function(doctype) {
-      buffer.push(options.useShortDoctype ? '<!doctype' +
-        (options.removeTagWhitespace ? '' : ' ') + 'html>' :
-        collapseWhitespaceAll(doctype));
+      buffer.push(
+        options.useShortDoctype
+          ? '<!doctype' + (options.removeTagWhitespace ? '' : ' ') + 'html>'
+          : collapseWhitespaceAll(doctype)
+      );
     }
   });
 
@@ -1276,50 +1417,71 @@ function minify(value, options, partialMarkup) {
     squashTrailingWhitespace('br');
   }
 
-  return joinResultSegments(buffer, options, uidPattern ? function(str) {
-    return str.replace(uidPattern, function(match, prefix, index, suffix) {
-      var chunk = ignoredCustomMarkupChunks[+index][0];
-      if (options.collapseWhitespace) {
-        if (prefix !== '\t') {
-          chunk = prefix + chunk;
+  return joinResultSegments(
+    buffer,
+    options,
+    uidPattern
+      ? function(str) {
+          return str.replace(uidPattern, function(
+            match,
+            prefix,
+            index,
+            suffix
+          ) {
+            var chunk = ignoredCustomMarkupChunks[+index][0];
+            if (options.collapseWhitespace) {
+              if (prefix !== '\t') {
+                chunk = prefix + chunk;
+              }
+              if (suffix !== '\t') {
+                chunk += suffix;
+              }
+              return collapseWhitespace(
+                chunk,
+                {
+                  preserveLineBreaks: options.preserveLineBreaks,
+                  conservativeCollapse: !options.trimCustomFragments
+                },
+                /^[ \n\r\t\f]/.test(chunk),
+                /[ \n\r\t\f]$/.test(chunk)
+              );
+            }
+            return chunk;
+          });
         }
-        if (suffix !== '\t') {
-          chunk += suffix;
+      : identity,
+    uidIgnore
+      ? function(str) {
+          return str.replace(
+            new RegExp('<!--' + uidIgnore + '([0-9]+)-->', 'g'),
+            function(match, index) {
+              return ignoredMarkupChunks[+index];
+            }
+          );
         }
-        return collapseWhitespace(chunk, {
-          preserveLineBreaks: options.preserveLineBreaks,
-          conservativeCollapse: !options.trimCustomFragments
-        }, /^[ \n\r\t\f]/.test(chunk), /[ \n\r\t\f]$/.test(chunk));
-      }
-      return chunk;
-    });
-  } : identity, uidIgnore ? function(str) {
-    return str.replace(new RegExp('<!--' + uidIgnore + '([0-9]+)-->', 'g'), function(match, index) {
-      return ignoredMarkupChunks[+index];
-    });
-  } : identity);
+      : identity
+  );
 }
 
 function joinResultSegments(results, options, restoreCustom, restoreIgnore) {
   var str;
   var maxLineLength = options.maxLineLength;
   if (maxLineLength) {
-    var line = '', lines = [];
+    var line = '',
+      lines = [];
     while (results.length) {
       var len = line.length;
       var end = results[0].indexOf('\n');
       if (end < 0) {
         line += restoreIgnore(restoreCustom(results.shift()));
-      }
-      else {
+      } else {
         line += restoreIgnore(restoreCustom(results[0].slice(0, end)));
         results[0] = results[0].slice(end + 1);
       }
       if (len > 0 && line.length > maxLineLength) {
         lines.push(line.slice(0, len));
         line = line.slice(len);
-      }
-      else if (end >= 0) {
+      } else if (end >= 0) {
         lines.push(line);
         line = '';
       }
@@ -1328,11 +1490,12 @@ function joinResultSegments(results, options, restoreCustom, restoreIgnore) {
       lines.push(line);
     }
     str = lines.join('\n');
-  }
-  else {
+  } else {
     str = restoreIgnore(restoreCustom(results.join('')));
   }
-  return options.collapseWhitespace ? collapseWhitespace(str, options, true, true) : str;
+  return options.collapseWhitespace
+    ? collapseWhitespace(str, options, true, true)
+    : str;
 }
 
 exports.minify = function(value, options) {
