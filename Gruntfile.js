@@ -33,8 +33,9 @@ module.exports = function(grunt) {
           preBundleCB: function() {
             var fs = require('fs');
             var terser = require('terser');
+            var UglifyJS = require('uglify-js');
             var files = {};
-            terser.FILES.forEach(function(file) {
+            UglifyJS.FILES.forEach(function(file) {
               files[file] = fs.readFileSync(file, 'utf8');
             });
             fs.writeFileSync(
